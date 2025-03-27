@@ -1,15 +1,17 @@
+
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  Container, Typography, Box, Skeleton, Button, IconButton
+  Box,
+  Typography,
+  Skeleton,
+  Button,
+  useMediaQuery,
 } from '@mui/material';
-import { Fullscreen, FullscreenExit } from '@mui/icons-material';
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { Pagination, Keyboard } from 'swiper/modules';
-import 'swiper/css';
-import 'swiper/css/pagination';
+import PhotoSwipeLightbox from 'photoswipe/lightbox';
+import 'photoswipe/style.css';
 
 type Page = {
   filename: string;
@@ -31,12 +33,12 @@ type NextChapter = {
 export default function ChapitreLecturePage() {
   const { mangaId, chapitreId } = useParams();
   const router = useRouter();
-  const swiperRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isMobile = useMediaQuery('(max-width:600px)');
   const [chapitre, setChapitre] = useState<Chapitre | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeIndex, setActiveIndex] = useState(0);
   const [nextChapter, setNextChapter] = useState<NextChapter | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showNextButton, setShowNextButton] = useState(false);
 
   useEffect(() => {
     const fetchChapitre = async () => {
@@ -61,120 +63,123 @@ export default function ChapitreLecturePage() {
     if (chapitreId && mangaId) fetchChapitre();
   }, [chapitreId, mangaId]);
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      swiperRef.current?.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
-    }
-  };
+  // Initialisation de PhotoSwipe
+  useEffect(() => {
+    if (!chapitre || !chapitre.pages.length) return;
+
+    const lightbox = new PhotoSwipeLightbox({
+      gallery: '#gallery',
+      children: 'a',
+      pswpModule: () => import('photoswipe'),
+      padding: { top: 0, bottom: 0, left: 0, right: 0 },
+      zoom: true,
+      bgOpacity: 1,
+    });
+
+    lightbox.init();
+    return () => lightbox.destroy();
+  }, [chapitre]);
+
+  // Détection de la fin du scroll pour afficher le bouton "chapitre suivant"
+  useEffect(() => {
+    const handleScroll = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const scrolledToEnd = container.scrollLeft + container.clientWidth >= container.scrollWidth - 10;
+      setShowNextButton(scrolledToEnd);
+    };
+
+    const container = containerRef.current;
+    container?.addEventListener('scroll', handleScroll);
+    return () => container?.removeEventListener('scroll', handleScroll);
+  }, [chapitre]);
 
   if (loading || !chapitre || !Array.isArray(chapitre.pages)) {
     return (
-      <Container maxWidth="md" sx={{ mt: 10 }}>
+      <Box sx={{ mt: 10, px: 2 }}>
         <Skeleton variant="text" height={50} />
         <Skeleton variant="rectangular" height={400} />
-      </Container>
+      </Box>
     );
   }
 
   return (
-    <Container
-      maxWidth="md"
+    <Box
       sx={{
-        mt: 6,
-        mb: 10,
-        backgroundColor: '#121212',
-        p: 3,
-        borderRadius: 3,
-        boxShadow: '0 0 15px rgba(0,0,0,0.5)',
+        backgroundColor: '#000',
+        height: '100vh',
+        width: '100%',
+        overflow: 'hidden',
+        position: 'relative',
       }}
     >
-      {/* Titre et bouton plein écran */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h4" fontWeight="bold">
-          {chapitre.titre}
-        </Typography>
-        <IconButton onClick={toggleFullscreen} sx={{ color: '#d9d9d9' }}>
-          {isFullscreen ? <FullscreenExit /> : <Fullscreen />}
-        </IconButton>
-      </Box>
-
-      {/* Swiper */}
-      <Box ref={swiperRef}>
-        <Swiper
-          modules={[Pagination, Keyboard]}
-          pagination={{ clickable: true }}
-          keyboard={{ enabled: true }}
-          spaceBetween={0}
-          slidesPerView={1}
-          onSlideChange={(swiper) => setActiveIndex(swiper.activeIndex)}
-          style={{ borderRadius: '12px', overflow: 'hidden' }}
-        >
-          {chapitre.pages.map((page, index) => (
-            <SwiperSlide key={index}>
-              <Box
-                component="img"
-                src={page.url}
-                alt={page.title || `Page ${index + 1}`}
-                loading="lazy"
-                sx={{
-                  width: '100%',
-                  height: 'auto',
-                  maxHeight: '85vh',
-                  objectFit: 'contain',
-                  backgroundColor: '#111',
-                  borderRadius: 2,
-                }}
-              />
-            </SwiperSlide>
-          ))}
-
-          {nextChapter && (
-            <SwiperSlide>
-              <Box
-                display="flex"
-                flexDirection="column"
-                alignItems="center"
-                justifyContent="center"
-                height="85vh"
-                sx={{ textAlign: 'center', color: '#d9d9d9' }}
-              >
-                <Typography variant="h5" gutterBottom>
-                  Vous avez terminé ce chapitre !
-                </Typography>
-                <Button
-                  variant="contained"
-                  onClick={() =>
-                    router.push(`/manga/${mangaId}/chapitre/${nextChapter.id}`)
-                  }
-                  sx={{
-                    mt: 2,
-                    px: 4,
-                    py: 1,
-                    fontSize: '1rem',
-                    backgroundColor: '#0077b6',
-                    '&:hover': { backgroundColor: '#005f87' },
-                  }}
-                >
-                  Lire le chapitre suivant : {nextChapter.titre}
-                </Button>
-              </Box>
-            </SwiperSlide>
-          )}
-        </Swiper>
-      </Box>
-
       <Typography
-        variant="caption"
-        display="block"
-        align="center"
-        sx={{ mt: 2, color: '#777' }}
+        variant="h5"
+        fontWeight="bold"
+        textAlign="center"
+        color="white"
+        mt={isMobile ? 2 : 4}
+        mb={2}
       >
-        Page {Math.min(activeIndex + 1, chapitre.pages.length)} sur {chapitre.pages.length}
+        {chapitre.titre}
       </Typography>
-    </Container>
+
+      {/* Galerie horizontale */}
+      <Box
+        id="gallery"
+        ref={containerRef}
+        sx={{
+          display: 'flex',
+          overflowX: 'auto',
+          scrollSnapType: 'x mandatory',
+          height: 'calc(100vh - 120px)',
+          px: 2,
+        }}
+      >
+        {chapitre.pages.map((page, index) => (
+          <a
+            key={index}
+            href={page.url}
+            data-pswp-width="1200"
+            data-pswp-height="1800"
+            style={{ flex: '0 0 100%', scrollSnapAlign: 'center' }}
+          >
+            <Box
+              component="img"
+              src={page.url}
+              alt={page.title || `Page ${index + 1}`}
+              sx={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+              }}
+            />
+          </a>
+        ))}
+      </Box>
+
+      {nextChapter && showNextButton && (
+        <Box
+          position="absolute"
+          bottom={20}
+          left="50%"
+          sx={{ transform: 'translateX(-50%)' }}
+        >
+          <Button
+            variant="contained"
+            onClick={() => router.push(`/manga/${mangaId}/chapitre/${nextChapter.id}`)}
+            sx={{
+              px: 4,
+              py: 1,
+              fontSize: '1rem',
+              backgroundColor: '#0077b6',
+              '&:hover': { backgroundColor: '#005f87' },
+            }}
+          >
+            Lire le chapitre suivant : {nextChapter.titre}
+          </Button>
+        </Box>
+      )}
+    </Box>
   );
 }
